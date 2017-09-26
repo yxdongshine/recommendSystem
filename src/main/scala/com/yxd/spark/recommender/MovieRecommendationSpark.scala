@@ -81,7 +81,7 @@ object MovieRecommendationSpark {
       .join(numberOfRatersPerMoviesRDD)
       .map {
         case (_, (record, raters)) => {
-          (record.userID, (record, raters))
+          (record.userID, (record, raters)) //这里格式：(userid,((userid,movieid,rating,removeAvgRate),rater))
         }
       }
     // 2.5 计算出每个用户 所有评分数量，电影的数据

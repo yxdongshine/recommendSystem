@@ -6,6 +6,8 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 /**
  * git 证书问题：http://blog.csdn.net/sdhongjun/article/details/52144253
+ *
+ *ALS推荐参考： http://spark.apache.org/docs/1.6.1/mllib-collaborative-filtering.html#collaborative-filtering
  */
 object DoubanMovieRecommender {
   def main(args: Array[String]): Unit = {
