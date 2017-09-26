@@ -275,7 +275,7 @@ object MovieRecommendationSpark {
     result.saveAsTextFile(s"result/user_movie/${System.currentTimeMillis()}")
 
     // 四、根据给定的用户id获取推荐列表
-    val userID = 1
+    val userID = 671
     result
       .filter(t => t._1 == userID && t._4 == 1)
       .mapPartitions(iter => {
