@@ -73,7 +73,7 @@ object MovieRecommendationSpark {
         }
       }
     // 2.3 计算出每个电影的评分人数
-    val numberOfRatersPerMoviesRDD = userMoviesRatingRDD
+    val numberOfRatersPerMoviesRDD: RDD[(Int, Int)] = userMoviesRatingRDD
       .map(record => (record.movieID, 1))
       .reduceByKey(_ + _)
     // 2.4 关联获取每个电影的评分人数

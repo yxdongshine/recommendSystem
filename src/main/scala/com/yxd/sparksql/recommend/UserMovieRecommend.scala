@@ -1,5 +1,7 @@
 package com.yxd.sparksql.recommend
 
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{Dataset, DataFrame}
 import org.apache.spark.{SparkContext, SparkConf}
 
 /**
@@ -55,13 +57,71 @@ object UserMovieRecommend {
     val removeAvgRateDataFrame = umrAvgRateDataFrame.select(umrAvgRateDataFrame("userID"),umrAvgRateDataFrame("movieID"),
       (umrAvgRateDataFrame("rating") - umrAvgRateDataFrame("avgRate")).as("removeAvgRate"),umrAvgRateDataFrame("avgRate"))
       .limit(10)
+    //这里将减去平均值后的矩阵缓存
+    removeAvgRateDataFrame.cache()
+    //开始根据物品分组 看每组物品有哪些userid
+    //先转换成map rdd
+    val movieIdRdd: RDD[(Int, Iterable[(Int, Int, Double, Double)])] = removeAvgRateDataFrame.map(
+    removeRdd => {(removeRdd(1).toString.toInt,(removeRdd(0).toString.toInt,removeRdd(1).toString.toInt,
+      removeRdd(2).toString.toDouble,removeRdd(3).toString.toDouble))}
+    ).groupByKey().sortBy(_._1)
 
-    //removeAvgRateDataFrame.flatMap()
+    movieIdRdd.foreach(println(_))
+    //缓存movieidRdd
+    movieIdRdd.cache()
 
+    //两次循环物品对应的用户评分 与其他物品的相似度
+    val similarityDegreeMatrixSeq: Seq[(Int, Int, Double)] = movieIdRdd.toArray().flatMap{
+      case (movieId, removeIter) => {
+        val removeList1 = removeIter.toList
+        movieIdRdd.toArray()
+          .filter( _._1 > movieId )
+          .map{
+            case (movieId1, removeIter2) => {
+              val removeList2 = removeIter2.toList
+              var fenzi = 0.0
+              var fenmu1 = 0.0
+              var fenmu2 = 0.0
+              //先以第一个物品计算其他物品分数
+              removeList1.map{
+                case(userIdrl1,_,rarrl1,_) => {
+                  val rarMovie2 = removeList2.find(_._1 == userIdrl1).get
+                  fenzi += rarrl1 * rarMovie2._3
+                  fenmu1 += rarrl1*rarrl1
+                  (fenzi,fenmu1)
+                }
+              }
 
+              //再以第N个物品计算第一个物品分数
+              removeList2.map{
+                case(userIdrl2,_,rarrl2,_) => {
+                  val rarMovie1 = removeList1.find(_._1 == userIdrl2).get
+                  fenzi += rarrl2 * rarMovie1._3
+                  fenmu2 += rarrl2*rarrl2
+                  (fenzi,fenmu2)
+                }
+              }
+              //最后的相似度
+              val similarityDegree = fenzi / (math.sqrt(fenmu1) * math.sqrt(fenmu2))
+              //返回成物品之间的相似度矩阵
+              (movieId,movieId1,similarityDegree)
+            }
+          }
+      }
+    }.toSeq
 
-
-
+    val similarityDegreeMatrix: RDD[(Int, Int, Double)] = sc.makeRDD(similarityDegreeMatrixSeq)
+    //换成相似度similarityDegreeMatrix
+    similarityDegreeMatrix.cache()
+    //将相似度矩阵保存在方便以后加载重复训练
+    similarityDegreeMatrix.foreach(println(_))
+    similarityDegreeMatrix
+      .map(
+         sd => {
+           sd._1+","+sd._2+","+sd._3
+         }
+      )
+      .saveAsTextFile(s"result/movie_similarity/${System.currentTimeMillis()}")
 
 
     // 开发过程中暂停一下，为了看http://localhost:4040/jobs/
