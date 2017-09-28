@@ -1,8 +1,10 @@
 package com.yxd.sparksql.recommend
 
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{Dataset, DataFrame}
+import org.apache.spark.sql.{Row, Dataset, DataFrame}
 import org.apache.spark.{SparkContext, SparkConf}
+
+import scala.util.Try
 
 /**
  * Created by yxd on 2017/9/26.
@@ -31,7 +33,7 @@ object UserMovieRecommend {
     uwrTable.registerTempTable("uwrTable")
     uwrTable.cache()
 
-    val movieTable = sc.textFile("data/movies.csv")
+    val movieTable: DataFrame = sc.textFile("data/movies.csv")
       .map( line => line.split(","))
       .map( ms => { Movie(ms(0).trim().toInt,ms(1).trim)})
       .toDF()
@@ -54,7 +56,7 @@ object UserMovieRecommend {
     //思想: 模型为行用户 列式电影 所以 有根据用户的分组
     val umrAvgRateDataFrame = sqlContext.sql("select userID,avg(rating) as avgRate from uwrTable group by userID ")
       .join(uwrTable,"userID")
-    val removeAvgRateDataFrame = umrAvgRateDataFrame.select(umrAvgRateDataFrame("userID"),umrAvgRateDataFrame("movieID"),
+    val removeAvgRateDataFrame: DataFrame = umrAvgRateDataFrame.select(umrAvgRateDataFrame("userID"),umrAvgRateDataFrame("movieID"),
       (umrAvgRateDataFrame("rating") - umrAvgRateDataFrame("avgRate")).as("removeAvgRate"),umrAvgRateDataFrame("avgRate"))
       .limit(10)
     //这里将减去平均值后的矩阵缓存
@@ -121,8 +123,46 @@ object UserMovieRecommend {
            sd._1+","+sd._2+","+sd._3
          }
       )
-      .saveAsTextFile(s"result/movie_similarity/${System.currentTimeMillis()}")
+     // .saveAsTextFile(s"result/movie_similarity/${System.currentTimeMillis()}")
 
+
+    //物品用户组成二位随机矩阵
+    val userIdRow: Array[Row] = removeAvgRateDataFrame.select("userID").distinct().orderBy("userID").collect()
+
+    val userMoiveRelationRdd: RDD[(Int, Int, String)] = movieTable.flatMap {
+      case (movieDf) => {
+        userIdRow.map{
+          case (idRow) => {
+            Try((idRow.get(0).toString.toInt, movieDf.getInt(0), movieDf.getString(1)))
+          }
+        }
+          .filter(_.isSuccess)
+        .map(_.get)
+      }
+    }
+    //userMoiveRelationRdd.foreach(println(_))
+
+    //前k个
+    val k = 5
+    //相似度因子
+    val sd = 0.1
+    //得到关系与物品相似度矩阵
+    val relationSDRdd = userMoiveRelationRdd
+    .toDF("userId","movieID","movieName")
+    .join(similarityDegreeMatrix.toDF("movieID","movieID1","similarityDegree"),"movieID") //关联相似度
+    .map{
+      case (row) => {
+            (row.get(1).toString.toInt,row.get(0),row.get(2),row.get(3))
+      }
+    }
+    .filter(rrd => rrd._4.toString.toDouble > sd )
+    //得到前K个
+    val recommentItemRdd = relationSDRdd
+      .groupBy(rsd => rsd._4)
+      .take(k)
+
+    //展示保存
+    recommentItemRdd.foreach(println(_))
 
     // 开发过程中暂停一下，为了看http://localhost:4040/jobs/
     Thread.sleep(100000)
