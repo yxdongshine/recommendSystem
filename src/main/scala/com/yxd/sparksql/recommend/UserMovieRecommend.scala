@@ -152,14 +152,47 @@ object UserMovieRecommend {
     .join(similarityDegreeMatrix.toDF("movieID","movieID1","similarityDegree"),"movieID") //关联相似度
     .map{
       case (row) => {
-            (row.get(1).toString.toInt,row.get(0),row.get(2),row.get(3))
+            //返回格式（userId，movieID，movieID1，similarityDegree）
+            (row.get(1).toString.toInt,row.get(0),row.get(3),row.get(4))
       }
     }
     .filter(rrd => rrd._4.toString.toDouble > sd )
+
+    //得到用户评分矩阵中用户id，电影id与评分值 的键值对
+    val umrKV: RDD[((Any, Any), Any)] = sqlContext
+      .sql("select userID,movieID,avg(rating) as rating from uwrTable group by userID,movieID ")
+    .map{
+      case (row ) => {
+        ((row.get(0),row.get(1)),row.get(2))
+      }
+    }
+
+    umrKV.cache()
+
     //得到前K个
     val recommentItemRdd = relationSDRdd
-      .groupBy(rsd => rsd._4)
-      .take(k)
+      .groupBy(rsd =>( rsd._1,rsd._2)).collect()
+      .flatMap{
+        case (key,cBuffer) => {
+          var fenzi = 0.0
+          var fenmu = 0.0
+          val cbList = cBuffer.toList.sortBy(_._4).takeRight(k)//取出前k个值
+          cbList.map{
+            case (row) => {
+              val umr = umrKV.filter(umrRow => {
+                umrRow._1 == (row._1,row._3)
+              })
+              val sd = row._4.toString.toDouble
+              fenzi += umr.map(line =>line._2.toString.toDouble).first() * sd
+              fenmu += sd
+              (fenzi,fenmu)
+            }
+          }
+          val score = fenzi / fenmu * 1.0
+          (key._1,key._2,score)
+        }
+    }
+
 
     //展示保存
     recommentItemRdd.foreach(println(_))
