@@ -58,7 +58,7 @@ object UserMovieRecommend {
       .join(uwrTable,"userID")
     val removeAvgRateDataFrame: DataFrame = umrAvgRateDataFrame.select(umrAvgRateDataFrame("userID"),umrAvgRateDataFrame("movieID"),
       (umrAvgRateDataFrame("rating") - umrAvgRateDataFrame("avgRate")).as("removeAvgRate"),umrAvgRateDataFrame("avgRate"))
-      .limit(10)
+
     //这里将减去平均值后的矩阵缓存
     removeAvgRateDataFrame.cache()
     //开始根据物品分组 看每组物品有哪些userid
@@ -87,20 +87,24 @@ object UserMovieRecommend {
               //先以第一个物品计算其他物品分数
               removeList1.map{
                 case(userIdrl1,_,rarrl1,_) => {
-                  val rarMovie2 = removeList2.find(_._1 == userIdrl1).get
-                  fenzi += rarrl1 * rarMovie2._3
-                  fenmu1 += rarrl1*rarrl1
-                  (fenzi,fenmu1)
+                  val rarMovie2 = removeList2.find(_._1 == userIdrl1).getOrElse(null)
+                  if(null != rarMovie2){
+                    fenzi += rarrl1 * rarMovie2._3
+                    fenmu1 += rarrl1*rarrl1
+                    (fenzi,fenmu1)
+                  }
                 }
               }
 
               //再以第N个物品计算第一个物品分数
               removeList2.map{
                 case(userIdrl2,_,rarrl2,_) => {
-                  val rarMovie1 = removeList1.find(_._1 == userIdrl2).get
-                  fenzi += rarrl2 * rarMovie1._3
-                  fenmu2 += rarrl2*rarrl2
-                  (fenzi,fenmu2)
+                  val rarMovie1 = removeList1.find(_._1 == userIdrl2).getOrElse(null)
+                  if(null != rarMovie1){
+                    fenzi += rarrl2 * rarMovie1._3
+                    fenmu2 += rarrl2*rarrl2
+                    (fenzi,fenmu2)
+                  }
                 }
               }
               //最后的相似度
@@ -147,13 +151,14 @@ object UserMovieRecommend {
     //相似度因子
     val sd = 0.1
     //得到关系与物品相似度矩阵
-    val relationSDRdd = userMoiveRelationRdd
+    val relationSDRdd: RDD[(Int, Int, Int, Double)] = userMoiveRelationRdd
     .toDF("userId","movieID","movieName")
     .join(similarityDegreeMatrix.toDF("movieID","movieID1","similarityDegree"),"movieID") //关联相似度
     .map{
       case (row) => {
             //返回格式（userId，movieID，movieID1，similarityDegree）
-            (row.get(1).toString.toInt,row.get(0),row.get(3),row.get(4))
+            (row.get(1).toString.toInt,row.get(0).toString.toInt
+              ,row.get(3).toString.toInt,row.get(4).toString.toDouble)
       }
     }
     .filter(rrd => rrd._4.toString.toDouble > sd )
@@ -185,18 +190,23 @@ object UserMovieRecommend {
               val sd = row._4.toString.toDouble
               fenzi += umr.map(line =>line._2.toString.toDouble).first() * sd
               fenmu += sd
-              (fenzi,fenmu)
             }
+              val score = fenzi / fenmu * 1.0
+              (key._1,key._2,score)
           }
-          val score = fenzi / fenmu * 1.0
-          (key._1,key._2,score)
+
         }
     }
 
 
     //展示保存
     recommentItemRdd.foreach(println(_))
-
+    println("=========推荐列表================")
+    //推荐用户31的列表
+    println("=========推荐用户31列表================")
+    recommentItemRdd
+    .filter(recommentItem => recommentItem._1 == 31)
+    .foreach(println(_))
     // 开发过程中暂停一下，为了看http://localhost:4040/jobs/
     Thread.sleep(100000)
   }
