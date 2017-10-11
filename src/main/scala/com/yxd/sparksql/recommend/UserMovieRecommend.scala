@@ -67,6 +67,12 @@ object UserMovieRecommend {
     removeRdd => {(removeRdd(1).toString.toInt,(removeRdd(0).toString.toInt,removeRdd(1).toString.toInt,
       removeRdd(2).toString.toDouble,removeRdd(3).toString.toDouble))}
     ).groupByKey().sortBy(_._1)
+   /*   .reduceByKey(
+     (iter1 ,iter2)=>{
+       iter1.map(
+        ele1 =>{(ele1._1 + iter2.head._1,ele1._2 + iter2.head._2,ele1._3 + iter2.head._3,ele1._4 + iter2.head._4)}
+       )
+    })*/
 
     movieIdRdd.foreach(println(_))
     //缓存movieidRdd
